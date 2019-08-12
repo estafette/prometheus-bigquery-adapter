@@ -1,0 +1,45 @@
+builder:
+  track: dev
+
+labels:
+  team: estafette-team
+  language: golang
+
+version:
+  semver:
+    major: 0
+    minor: 1
+
+stages:
+  build:
+    image: golang:1.12.7-alpine3.10
+    env:
+      CGO_ENABLED: 0
+      GOOS: linux
+      GOFLAGS: -mod=vendor
+      GOGC: off
+    commands:
+    - go test ./...
+    - go build -a -installsuffix cgo -o ./publish/${ESTAFETTE_GIT_NAME} .
+
+  bake:
+    image: extensions/docker:dev
+    action: build
+    inline: |
+      FROM scratch
+
+      COPY ca-certificates.crt /etc/ssl/certs/
+      COPY ${ESTAFETTE_GIT_NAME} /
+
+      ENTRYPOINT ["/${ESTAFETTE_GIT_NAME}"]
+    repositories:
+    - estafette
+    path: ./publish
+    copy:
+    - /etc/ssl/certs/ca-certificates.crt
+
+  push-to-docker-hub:
+    image: extensions/docker:dev
+    action: push
+    repositories:
+    - estafette
