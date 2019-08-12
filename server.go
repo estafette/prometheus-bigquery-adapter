@@ -1,16 +1,3 @@
-// Copyright 2016 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
@@ -22,11 +9,36 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-
+	"github.com/alecthomas/kingpin"
 	"github.com/prometheus/prometheus/prompb"
 )
 
+var (
+	bigqueryProjectID     = kingpin.Flag("bigquery-project-id", "Google Cloud project id that contains the BigQuery dataset").Envar("BQ_PROJECT_ID").Required().String()
+	bigqueryDataset       = kingpin.Flag("bigquery-dataset", "Name of the BigQuery dataset").Envar("BQ_DATASET").Required().String()
+	bigqueryTable         = kingpin.Flag("bigquery-table", "Name of the BigQuery table").Envar("BQ_TABLE").Required().String()
+)
+
 func main() {
+
+	// parse command line parameters
+	kingpin.Parse()
+
+	bigqueryClient, err := NewBigQueryClient(*bigqueryProjectID)
+	if err != nil {
+		log.Fatal("Failed creating bigquery client", err)
+	}
+
+	fmt.Printf("Checking if table %v.%v.%v exists...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
+	tableExist := bigqueryClient.CheckIfTableExists(*bigqueryDataset, *bigqueryTable)
+	if !tableExist {
+		fmt.Printf("Creating table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
+		err := bigqueryClient.CreateTable(*bigqueryDataset, *bigqueryTable, promb.TimeSeries{}, "", true)
+		if err != nil {
+			log.Fatal("Failed creating bigquery table")
+		}
+	}
+
 	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -45,7 +57,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
+	
 		for _, ts := range req.Timeseries {
 			m := make(model.Metric, len(ts.Labels))
 			for _, l := range ts.Labels {
@@ -57,6 +69,12 @@ func main() {
 				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
 			}
 		}
+
+		// fmt.Printf("Inserting measurements into table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
+		// err = bigqueryClient.InsertTimeSeries(*bigqueryDataset, *bigqueryTable, req.Timeseries)
+		// if err != nil {
+		// 	log.Fatal("Failed inserting measurements into bigquery table")
+		// }
 	})
 
 	log.Fatal(http.ListenAndServe(":1234", nil))
