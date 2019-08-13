@@ -15,7 +15,7 @@ type BigQueryClient interface {
 	CheckIfTableExists(dataset, table string) bool
 	CreateTable(dataset, table string, typeForSchema interface{}, partitionField string, waitReady bool) error
 	DeleteTable(dataset, table string) error
-	InsertTimeSeries(dataset, table string, timeseries []prompb.TimeSeries) error
+	InsertTimeSeries(dataset, table string, timeseries []*prompb.TimeSeries) error
 }
 
 type bigQueryClientImpl struct {
@@ -112,7 +112,7 @@ func (bqc *bigQueryClientImpl) DeleteTable(dataset, table string) error {
 	return nil
 }
 
-func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []prompb.TimeSeries) error {
+func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []*prompb.TimeSeries) error {
 	tbl := bqc.client.Dataset(dataset).Table(table)
 
 	u := tbl.Uploader()
