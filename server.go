@@ -73,7 +73,7 @@ func main() {
 		fmt.Printf("Inserting measurements into table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
 		err = bigqueryClient.InsertTimeSeries(*bigqueryDataset, *bigqueryTable, req.Timeseries)
 		if err != nil {
-			log.Fatal("Failed inserting measurements into bigquery table")
+			log.Fatal("Failed inserting measurements into bigquery table", err)
 		}
 	})
 
