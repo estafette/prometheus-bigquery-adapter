@@ -6,17 +6,17 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/alecthomas/kingpin"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-	"github.com/alecthomas/kingpin"
 	"github.com/prometheus/prometheus/prompb"
 )
 
 var (
-	bigqueryProjectID     = kingpin.Flag("bigquery-project-id", "Google Cloud project id that contains the BigQuery dataset").Envar("BQ_PROJECT_ID").Required().String()
-	bigqueryDataset       = kingpin.Flag("bigquery-dataset", "Name of the BigQuery dataset").Envar("BQ_DATASET").Required().String()
-	bigqueryTable         = kingpin.Flag("bigquery-table", "Name of the BigQuery table").Envar("BQ_TABLE").Required().String()
+	bigqueryProjectID = kingpin.Flag("bigquery-project-id", "Google Cloud project id that contains the BigQuery dataset").Envar("BQ_PROJECT_ID").Required().String()
+	bigqueryDataset   = kingpin.Flag("bigquery-dataset", "Name of the BigQuery dataset").Envar("BQ_DATASET").Required().String()
+	bigqueryTable     = kingpin.Flag("bigquery-table", "Name of the BigQuery table").Envar("BQ_TABLE").Required().String()
 )
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 	tableExist := bigqueryClient.CheckIfTableExists(*bigqueryDataset, *bigqueryTable)
 	if !tableExist {
 		fmt.Printf("Creating table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
-		err := bigqueryClient.CreateTable(*bigqueryDataset, *bigqueryTable, promb.TimeSeries{}, "", true)
+		err := bigqueryClient.CreateTable(*bigqueryDataset, *bigqueryTable, prompb.TimeSeries{}, "", true)
 		if err != nil {
 			log.Fatal("Failed creating bigquery table")
 		}
@@ -57,7 +57,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-	
+
 		for _, ts := range req.Timeseries {
 			m := make(model.Metric, len(ts.Labels))
 			for _, l := range ts.Labels {

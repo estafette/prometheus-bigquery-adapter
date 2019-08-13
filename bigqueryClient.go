@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -14,7 +15,7 @@ type BigQueryClient interface {
 	CheckIfTableExists(dataset, table string) bool
 	CreateTable(dataset, table string, typeForSchema interface{}, partitionField string, waitReady bool) error
 	DeleteTable(dataset, table string) error
-	InsertTimeSeries(dataset, table string, timeseries []promb.TimeSeries) error
+	InsertTimeSeries(dataset, table string, timeseries []prompb.TimeSeries) error
 }
 
 type bigQueryClientImpl struct {
@@ -41,8 +42,10 @@ func (bqc *bigQueryClientImpl) CheckIfDatasetExists(dataset string) bool {
 	ds := bqc.client.Dataset(dataset)
 
 	md, err := ds.Metadata(context.Background())
-
-	fmt.Printf("Error retrieving metadata for dataset %v", dataset)
+	if err != nil {
+		fmt.Printf("Error retrieving metadata for dataset %v", dataset)
+		return false
+	}
 
 	return md != nil
 }
@@ -109,7 +112,7 @@ func (bqc *bigQueryClientImpl) DeleteTable(dataset, table string) error {
 	return nil
 }
 
-func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []promb.TimeSeries) error
+func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []prompb.TimeSeries) error {
 	tbl := bqc.client.Dataset(dataset).Table(table)
 
 	u := tbl.Uploader()
