@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -117,7 +118,23 @@ func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeserie
 
 	u := tbl.Uploader()
 
-	if err := u.Put(context.Background(), timeseries); err != nil {
+	// filter NaN and Inf sample values
+	filteredTimeseries := make([]*prompb.TimeSeries, 0)
+	for _, ts := range timeseries {
+		filteredTs := &prompb.TimeSeries{
+			Labels:  ts.Labels,
+			Samples: make([]prompb.Sample, 0),
+		}
+
+		for _, s := range ts.Samples {
+			if !math.IsNaN(s.Value) && !math.IsInf(s.Value, 0) {
+				filteredTs.Samples = append(filteredTs.Samples, s)
+			}
+		}
+		filteredTimeseries = append(filteredTimeseries, filteredTs)
+	}
+
+	if err := u.Put(context.Background(), filteredTimeseries); err != nil {
 		return err
 	}
 
