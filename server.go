@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
+	"time"
 
 	"github.com/alecthomas/kingpin"
 	"github.com/gogo/protobuf/proto"
@@ -33,7 +35,7 @@ func main() {
 	tableExist := bigqueryClient.CheckIfTableExists(*bigqueryDataset, *bigqueryTable)
 	if !tableExist {
 		fmt.Printf("Creating table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
-		err := bigqueryClient.CreateTable(*bigqueryDataset, *bigqueryTable, prompb.TimeSeries{}, "", true)
+		err := bigqueryClient.CreateTable(*bigqueryDataset, *bigqueryTable, TimeSeriesSample{}, "Timestamp", true)
 		if err != nil {
 			log.Fatal("Failed creating bigquery table")
 		}
@@ -71,11 +73,48 @@ func main() {
 		}
 
 		fmt.Printf("Inserting measurements into table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
-		err = bigqueryClient.InsertTimeSeries(*bigqueryDataset, *bigqueryTable, req.Timeseries)
+		err = bigqueryClient.InsertTimeSeries(*bigqueryDataset, *bigqueryTable, convert(req.Timeseries))
 		if err != nil {
 			log.Fatal("Failed inserting measurements into bigquery table", err)
 		}
 	})
 
 	log.Fatal(http.ListenAndServe(":1234", nil))
+}
+
+func convert(timeseries []*prompb.TimeSeries) []TimeSeriesSample {
+	tss := make([]TimeSeriesSample, 0)
+
+	for _, ts := range timeseries {
+		convertedLabels := make([]Label, 0)
+
+		tsName := ""
+		for _, l := range ts.Labels {
+			convertedLabels = append(convertedLabels, Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+			// get timeline series name
+			if l.Name == "__name__" {
+				tsName = l.Value
+			}
+		}
+
+		for _, s := range ts.Samples {
+			if !math.IsNaN(s.Value) && !math.IsInf(s.Value, 0) {
+				tss = append(tss, TimeSeriesSample{
+					Name:      tsName,
+					Labels:    convertedLabels,
+					Value:     s.Value,
+					Timestamp: toTime(s.Timestamp),
+				})
+			}
+		}
+	}
+
+	return tss
+}
+
+func toTime(ts int64) time.Time {
+	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond))
 }

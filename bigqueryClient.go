@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 // BigQueryClient is the interface for connecting to bigquery
@@ -16,7 +14,7 @@ type BigQueryClient interface {
 	CheckIfTableExists(dataset, table string) bool
 	CreateTable(dataset, table string, typeForSchema interface{}, partitionField string, waitReady bool) error
 	DeleteTable(dataset, table string) error
-	InsertTimeSeries(dataset, table string, timeseries []*prompb.TimeSeries) error
+	InsertTimeSeries(dataset, table string, timeseries []TimeSeriesSample) error
 }
 
 type bigQueryClientImpl struct {
@@ -113,28 +111,12 @@ func (bqc *bigQueryClientImpl) DeleteTable(dataset, table string) error {
 	return nil
 }
 
-func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []*prompb.TimeSeries) error {
+func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeseries []TimeSeriesSample) error {
 	tbl := bqc.client.Dataset(dataset).Table(table)
 
 	u := tbl.Uploader()
 
-	// filter NaN and Inf sample values
-	filteredTimeseries := make([]*prompb.TimeSeries, 0)
-	for _, ts := range timeseries {
-		filteredTs := &prompb.TimeSeries{
-			Labels:  ts.Labels,
-			Samples: make([]prompb.Sample, 0),
-		}
-
-		for _, s := range ts.Samples {
-			if !math.IsNaN(s.Value) && !math.IsInf(s.Value, 0) {
-				filteredTs.Samples = append(filteredTs.Samples, s)
-			}
-		}
-		filteredTimeseries = append(filteredTimeseries, filteredTs)
-	}
-
-	if err := u.Put(context.Background(), filteredTimeseries); err != nil {
+	if err := u.Put(context.Background(), timeseries); err != nil {
 		return err
 	}
 
