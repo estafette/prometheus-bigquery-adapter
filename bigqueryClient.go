@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 // BigQueryClient is the interface for connecting to bigquery
@@ -15,6 +17,7 @@ type BigQueryClient interface {
 	CreateTable(dataset, table string, typeForSchema interface{}, partitionField string, waitReady bool) error
 	DeleteTable(dataset, table string) error
 	InsertTimeSeries(dataset, table string, timeseries []TimeSeriesSample) error
+	QueryTimeSeries(dataset, table string, req *prompb.ReadRequest) (*prompb.ReadResponse, error)
 }
 
 type bigQueryClientImpl struct {
@@ -121,4 +124,47 @@ func (bqc *bigQueryClientImpl) InsertTimeSeries(dataset, table string, timeserie
 	}
 
 	return nil
+}
+
+func (bqc *bigQueryClientImpl) QueryTimeSeries(dataset, table string, req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
+
+	tbl := bqc.client.Dataset(dataset).Table(table)
+
+}
+
+func convert(timeseries []*prompb.TimeSeries) []TimeSeriesSample {
+	tss := make([]TimeSeriesSample, 0)
+
+	for _, ts := range timeseries {
+		convertedLabels := make([]Label, 0)
+
+		tsName := ""
+		for _, l := range ts.Labels {
+			convertedLabels = append(convertedLabels, Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+			// get timeline series name
+			if l.Name == "__name__" {
+				tsName = l.Value
+			}
+		}
+
+		for _, s := range ts.Samples {
+			if !math.IsNaN(s.Value) && !math.IsInf(s.Value, 0) {
+				tss = append(tss, TimeSeriesSample{
+					Name:      tsName,
+					Labels:    convertedLabels,
+					Value:     s.Value,
+					Timestamp: toTime(s.Timestamp),
+				})
+			}
+		}
+	}
+
+	return tss
+}
+
+func toTime(ts int64) time.Time {
+	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond))
 }

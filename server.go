@@ -4,14 +4,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
-	"time"
 
 	"github.com/alecthomas/kingpin"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -60,61 +57,70 @@ func main() {
 			return
 		}
 
-		for _, ts := range req.Timeseries {
-			m := make(model.Metric, len(ts.Labels))
-			for _, l := range ts.Labels {
-				m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-			}
-			fmt.Println(m)
+		// for _, ts := range req.Timeseries {
+		// 	m := make(model.Metric, len(ts.Labels))
+		// 	for _, l := range ts.Labels {
+		// 		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+		// 	}
+		// 	fmt.Println(m)
 
-			for _, s := range ts.Samples {
-				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
-			}
-		}
+		// 	for _, s := range ts.Samples {
+		// 		fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
+		// 	}
+		// }
 
-		fmt.Printf("Inserting measurements into table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
+		// fmt.Printf("Inserting measurements into table %v.%v.%v...", *bigqueryProjectID, *bigqueryDataset, *bigqueryTable)
 		err = bigqueryClient.InsertTimeSeries(*bigqueryDataset, *bigqueryTable, convert(req.Timeseries))
 		if err != nil {
 			fmt.Printf("Failed inserting measurements into bigquery table: %v", err)
 		}
 	})
 
+	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			fmt.Printf("msg", "Read error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		reqBuf, err := snappy.Decode(nil, compressed)
+		if err != nil {
+			fmt.Printf("msg", "Decode error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req prompb.ReadRequest
+		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+			fmt.Printf("msg", "Unmarshal error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var resp *prompb.ReadResponse
+		resp, err = bigqueryClient.QueryTimeSeries(*bigqueryDataset, *bigqueryTable, &req)
+
+		if err != nil {
+			fmt.Printf("msg", "Error executing query", "query", req, "storage", "bigquery", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
+		compressed = snappy.Encode(nil, data)
+		if _, err := w.Write(compressed); err != nil {
+			fmt.Printf("msg", "Error writing response", "storage", "bigquery", "err", err)
+		}
+	})
+
 	log.Fatal(http.ListenAndServe(":1234", nil))
-}
-
-func convert(timeseries []*prompb.TimeSeries) []TimeSeriesSample {
-	tss := make([]TimeSeriesSample, 0)
-
-	for _, ts := range timeseries {
-		convertedLabels := make([]Label, 0)
-
-		tsName := ""
-		for _, l := range ts.Labels {
-			convertedLabels = append(convertedLabels, Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-			// get timeline series name
-			if l.Name == "__name__" {
-				tsName = l.Value
-			}
-		}
-
-		for _, s := range ts.Samples {
-			if !math.IsNaN(s.Value) && !math.IsInf(s.Value, 0) {
-				tss = append(tss, TimeSeriesSample{
-					Name:      tsName,
-					Labels:    convertedLabels,
-					Value:     s.Value,
-					Timestamp: toTime(s.Timestamp),
-				})
-			}
-		}
-	}
-
-	return tss
-}
-
-func toTime(ts int64) time.Time {
-	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond))
 }
